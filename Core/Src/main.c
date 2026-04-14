@@ -50,7 +50,7 @@ typedef struct
 typedef enum
 {
 	Inactive = 0,
-	Active  = 1
+	Active   = 1
 }type_bool_state;
 
 typedef struct
@@ -71,10 +71,23 @@ typedef struct
 
 typedef enum
 {
-	Detecting = 0,
+	Detecting           = 0,
 	Possible_transition = 1,
-	Detected = 2
+	Detected            = 2
 } type_transition_state;
+
+
+typedef struct
+{
+	type_bool_state atu;
+	type_bool_state ant;
+
+	type_transition_state transition_state;
+
+	type_ST timer_db;
+	uint32_t debounce_time;
+
+} type_button;
 
 /* USER CODE END PTD */
 
@@ -96,9 +109,13 @@ type_ST ST_Timer1;
 type_PWM PWM1;
 type_on_off LED_B_state;
 
-type_bool_state BOT_B_atu, BOT_B_ant;
-type_ST ST_Timer_db_BOT_B;
-type_transition_state BOT_B_Rising_Transition;
+type_button BOT_B;
+
+
+type_transition_state event;
+
+
+type_bool_state leitura_botao;
 
 /* USER CODE END PV */
 
@@ -111,10 +128,19 @@ type_bool ST(type_ST *pST);
 void ST_Lapse(type_ST *pST);
 
 void PWM_Run(type_PWM *pPWM);
-void PWM_Init(type_PWM *pPWM, GPIO_TypeDef* GPIO_Port, uint16_t GPIO_Pin, 
-              uint32_t Period, float Duty); 
-void PWM_Update(type_PWM *pPWM, uint32_t Period, 
-                float Duty, type_bool_state shadow);
+void PWM_Init(type_PWM *pPWM,
+	GPIO_TypeDef* GPIO_Port,
+	uint16_t GPIO_Pin, 
+	uint32_t Period,
+	float Duty); 
+void PWM_Update(type_PWM *pPWM,
+	uint32_t Period, 
+	float Duty,
+	type_bool_state shadow);
+
+type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura);
+
+void Button_Init(type_button *btn, uint32_t debounce_time);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -162,10 +188,7 @@ int main(void)
 	
 	int i = 0;
 	
-	BOT_B_atu = Active;
-	BOT_B_ant = Active;
-	
-	BOT_B_Rising_Transition = Detecting;
+	Button_Init(&BOT_B, 50);
 	
 	/* USER CODE END 2 */
 
@@ -178,8 +201,6 @@ int main(void)
 
 		/* USER CODE BEGIN 3 */
 		
-		if (BOT_B_Rising_Transition == Detected)
-			HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
 		
 		if (ST(&ST_Timer1)) {
 			ST_Lapse(&ST_Timer1);
@@ -201,8 +222,8 @@ int main(void)
 		}
 	    
 		
-		BOT_B_atu = (type_bool_state)HAL_GPIO_ReadPin(BOT_B_GPIO_Port, BOT_B_Pin);
-		if (BOT_B_atu) 
+		leitura_botao = (type_bool_state)HAL_GPIO_ReadPin(BOT_B_GPIO_Port, BOT_B_Pin);
+		if (leitura_botao)
 		{
 			if (LED_B_state == off) {
 				HAL_GPIO_WritePin(LED_B_GPIO_Port, LED_B_Pin, GPIO_PIN_SET);
@@ -218,37 +239,11 @@ int main(void)
 			
 		}
 		
-		if (BOT_B_Rising_Transition == Detecting)
+		event = Button_Debounce(&BOT_B, leitura_botao);
+
+		if (event == Detected)
 		{
-			if (BOT_B_atu == Active)
-			{
-				if (BOT_B_ant == Inactive)
-				{
-					// Saboooor transição
-					ST_Init(&ST_Timer_db_BOT_B, 200);
-					BOT_B_Rising_Transition = Possible_transition;
-				}			
-			}
-			BOT_B_ant = BOT_B_atu;
-		} 
-		else if (BOT_B_Rising_Transition == Possible_transition)
-		{
-			if (ST(&ST_Timer_db_BOT_B))
-			{
-				if (BOT_B_atu == Active)
-				{
-					BOT_B_Rising_Transition = Detected;
-				}
-				else
-				{
-					BOT_B_Rising_Transition = Detecting;
-				}
-			}
-			
-		}
-		else // Detected
-		{
-			BOT_B_Rising_Transition = Detecting;
+			HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
 		}
 		
 		
@@ -264,43 +259,43 @@ int main(void)
   */
 void SystemClock_Config(void)
 {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+	RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = { 0 };
 
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+	/** Configure the main internal regulator output voltage
+	*/
+	__HAL_RCC_PWR_CLK_ENABLE();
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 168;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Initializes the RCC Oscillators according to the specified parameters
+	* in the RCC_OscInitTypeDef structure.
+	*/
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = 4;
+	RCC_OscInitStruct.PLL.PLLN = 168;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = 4;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+	{
+		Error_Handler();
+	}
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+	/** Initializes the CPU, AHB and APB buses clocks
+	*/
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+	                            | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+	{
+		Error_Handler();
+	}
 }
 
 /* USER CODE BEGIN 4 */
@@ -382,8 +377,10 @@ void PWM_Run(type_PWM *pPWM)
 	}
 }
 
-void PWM_Update(type_PWM *pPWM, uint32_t Period, 
-                float Duty, type_bool_state shadow)
+void PWM_Update(type_PWM *pPWM,
+	uint32_t Period, 
+	float Duty,
+	type_bool_state shadow)
 {
 #if (0)
 	pPWM->T = Period;
@@ -417,6 +414,61 @@ void PWM_Update(type_PWM *pPWM, uint32_t Period,
 	}
 }
 
+
+void Button_Init(type_button *btn, uint32_t debounce_time)
+{
+	btn->atu = Active;
+	btn->ant = Active;
+
+	btn->transition_state = Detecting;
+
+	btn->debounce_time = debounce_time;
+
+	ST_Init(&btn->timer_db, debounce_time);
+}
+
+
+type_transition_state Button_Debounce(type_button *btn, type_bool_state leitura)
+{
+	btn->atu = leitura;
+
+	switch (btn->transition_state)
+	{
+	case Detecting:
+		if (btn->atu == Active && btn->ant == Inactive)
+		{
+			ST_Init(&btn->timer_db, btn->debounce_time);
+			btn->transition_state = Possible_transition;
+		}
+		btn->ant = btn->atu;
+		break;
+
+	case Possible_transition:
+		if (ST(&btn->timer_db))
+		{
+			if (btn->atu == Active)
+			{
+				btn->transition_state = Detected;
+			}
+			else
+			{
+				btn->transition_state = Detecting;
+			}
+		}
+		break;
+
+	case Detected:
+		btn->transition_state = Detecting;
+		break;
+
+	default:
+		btn->transition_state = Detecting;
+		break;
+	}
+
+	return btn->transition_state;
+}
+
 /* USER CODE END 4 */
 
 /**
@@ -425,13 +477,13 @@ void PWM_Update(type_PWM *pPWM, uint32_t Period,
   */
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
+	/* USER CODE BEGIN Error_Handler_Debug */
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1)
+	{
+	}
+	/* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
 /**
@@ -443,9 +495,9 @@ void Error_Handler(void)
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
+	/* USER CODE BEGIN 6 */
+	/* User can add his own implementation to report the file name and line number,
+	   ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	 /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
