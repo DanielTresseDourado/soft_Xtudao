@@ -76,6 +76,12 @@ typedef enum
 	Detected            = 2
 } type_transition_state;
 
+typedef enum
+{
+	Falling,
+	Rising
+}
+type_transition_edge;
 
 typedef struct
 {
@@ -84,7 +90,8 @@ typedef struct
 	GPIO_TypeDef *Port;
 	uint16_t Pin;
 	type_transition_state transition_state;
-
+	type_transition_edge Edge;
+	
 	type_ST timer_db;
 	uint32_t debounce_time;
 
@@ -141,7 +148,7 @@ void PWM_Update(type_PWM *pPWM,
 
 type_transition_state Button_Debounce(type_button *btn);
 
-void Button_Init(type_button *btn, GPIO_TypeDef *Port, uint16_t Pin, uint32_t debounce_time);
+void Button_Init(type_button *btn, GPIO_TypeDef *Port, uint16_t Pin, uint32_t debounce_time, type_transition_edge Edge);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -189,7 +196,7 @@ int main(void)
 	
 	int i = 0;
 	
-	Button_Init(&BOT_B, BOT_B_GPIO_Port, BOT_B_Pin, 50);	
+	Button_Init(&BOT_B, BOT_B_GPIO_Port, BOT_B_Pin, 50, Rising);	
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -413,7 +420,7 @@ void PWM_Update(type_PWM *pPWM,
 }
 
 
-void Button_Init(type_button *btn, GPIO_TypeDef *Port, uint16_t Pin, uint32_t debounce_time)
+void Button_Init(type_button *btn, GPIO_TypeDef *Port, uint16_t Pin, uint32_t debounce_time, type_transition_edge Edge)
 {
 	btn->atu = Active; // Começa ativo
 	btn->ant = Active;
@@ -421,10 +428,9 @@ void Button_Init(type_button *btn, GPIO_TypeDef *Port, uint16_t Pin, uint32_t de
 	btn->Port = Port;
 	btn->Pin = Pin;
     
+	btn->Edge = Edge;
 	btn->transition_state = Detecting;
 	btn->debounce_time = debounce_time;
-
-	ST_Init(&btn->timer_db, debounce_time);
 }
 
 
@@ -435,21 +441,23 @@ type_transition_state Button_Debounce(type_button *btn)
 	switch (btn->transition_state)
 	{
 	case Detecting:
-		// 1. Detecta a intenção de clique (Borda de Subida)
-		if (btn->atu == Active && btn->ant == Inactive)
+		// Verifica se houve a transição baseada na borda escolhida
+		// Rising: ant=Inactive (0) e atu=Active (1)
+		// Falling: ant=Active (1) e atu=Inactive (0)
+		if ((btn->Edge == Rising && btn->atu == Active && btn->ant == Inactive) ||
+		    (btn->Edge == Falling && btn->atu == Inactive && btn->ant == Active))
 		{
 			ST_Init(&btn->timer_db, btn->debounce_time); 
-            
 			btn->transition_state = Possible_transition;
 		}
 		break;
 
 	case Possible_transition:
-		// 3. Aguarda o tempo de debounce passar
 		if (ST(&btn->timer_db))
 		{
-			// 4. Após o tempo, verifica se o botão ainda está pressionado
-			if (btn->atu == Active)
+			// Se (Rising E Ativo) OU (Falling E Inativo)
+			if ((btn->Edge == Rising  && btn->atu == Active) ||
+			    (btn->Edge == Falling && btn->atu == Inactive))
 			{
 				btn->transition_state = Detected;
 			}
@@ -461,7 +469,7 @@ type_transition_state Button_Debounce(type_button *btn)
 		break;
 
 	case Detected:
-		// Estado transiente para o Main ler o evento
+		// O Main lê esse estado e nós voltamos a detectar no próximo ciclo
 		btn->transition_state = Detecting;
 		break;
 
@@ -470,9 +478,7 @@ type_transition_state Button_Debounce(type_button *btn)
 		break;
 	}
 
-	// Atualiza o estado anterior para a próxima varredura
 	btn->ant = btn->atu;
-
 	return btn->transition_state;
 }
 
