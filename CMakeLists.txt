@@ -4,8 +4,11 @@ project(soft_pwm LANGUAGES C CXX ASM)
 
 find_bsp(ID com.sysprogs.project_importers.stm32.cubemx SOURCE_PROJECT soft_pwm.ioc)
 
-add_bsp_based_executable(NAME soft_pwm
+bsp_include_directories(.)
+add_bsp_based_executable(
+	NAME soft_pwm
 	GENERATE_BIN
-	GENERATE_MAP)
+	GENERATE_MAP
+	SOURCES ${BSP_ROOT}/Micro_III_Functions.h ${BSP_ROOT}/Micro_III_Functions.c)
 set_source_files_properties(${BSP_ROOT}/Core/Src/main_old.c PROPERTIES HEADER_FILE_ONLY TRUE)
 
